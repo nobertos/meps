@@ -304,7 +304,7 @@ def tester_distributions(taux_arrivee=1.0, temps_service_moyen=0.5):
     """
     Fonction de test qui compare différentes distributions de service.
     """
-    print(f"\nTest avec taux d'arrivée λ = {taux_arrivee} et temps de service moyen = {temps_service_moyen}")
+    print(f"\nTest avec taux d'arrivée λ = {format_fraction(taux_arrivee)} et temps de service moyen = {format_fraction(temps_service_moyen)}")
     print("=" * 80)
     
     file = FileAttenteMG1(taux_arrivee)
