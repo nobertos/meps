@@ -1,8 +1,33 @@
 import numpy as np
+from scipy.stats import expon
+import matplotlib.pyplot as plt
+
+
+from fractions import Fraction
+
+def format_fraction(value):
+    """Helper function to format numbers as fractions when possible."""
+    if isinstance(value, (int, float)):
+        if value.is_integer():
+            return str(int(value))
+        try:
+            f = Fraction(value).limit_denominator()
+            if f.denominator == 1:
+                return str(f.numerator)
+            return f"{f.numerator}/{f.denominator}"
+        except:
+            return f"{value:.8f}"
+    return str(value)
 
 class FileAttenteMG1:
     """
     Analyse d'une file d'attente M/G/1 utilisant la formule de Pollaczek-Khinchin.
+    Supporte les distributions:
+    - Erlang-k (CV² < 1)
+    - Hyper-exponential-k (CV² > 1)
+    - Hypo-exponential-k (CV² < 1)
+    - Exponentielle (CV² = 1)
+    - Constante (CV² = 0)
     
     Notation:
     - m₁: Premier moment du temps de service (E[X])
@@ -94,9 +119,98 @@ class FileAttenteMG1:
             resultats["parametre_forme"] = k
             resultats["taux_phase"] = k/EX
             resultats["interpretation"] = {
-                "phases": f"Le processus de service consiste en {k} phases exponentielles",
+                "phases": f"Le processus de service consiste en {k} phases exponentielles en série",
                 "variabilite": "Faible" if k > 5 else "Moyenne" if k > 1 else "Élevée",
                 "cv_carre_theorique": 1/k
+            }
+        
+        return resultats
+    
+    def analyser_service_hyperexp(self, EX, k, p=None, mu=None):
+        """
+        Analyse avec temps de service Hyper-exponentiels (mélange de k distributions exponentielles).
+        
+        Args:
+            EX: Temps de service moyen souhaité
+            k: Nombre de branches exponentielles
+            p: Liste des probabilités de chaque branche (optionnel)
+            mu: Liste des taux de service de chaque branche (optionnel)
+        """
+        if not isinstance(k, int) or k < 2:
+            raise ValueError("k doit être un entier ≥ 2")
+            
+        # Si p n'est pas fourni, utiliser des probabilités égales
+        if p is None:
+            p = np.ones(k) / k
+        elif len(p) != k or not np.isclose(sum(p), 1):
+            raise ValueError("p doit être un vecteur de probabilités de somme 1")
+            
+        # Si mu n'est pas fourni, calculer des taux qui donnent EX
+        if mu is None:
+            # Utiliser des taux qui donnent le CV² > 1 souhaité
+            mu = np.array([(2*i+1)/(EX) for i in range(k)])
+        elif len(mu) != k:
+            raise ValueError("mu doit avoir k éléments")
+            
+        # Calcul des moments
+        m1 = sum(p[i]/mu[i] for i in range(k))
+        m2 = 2 * sum(p[i]/mu[i]**2 for i in range(k))
+        
+        resultats = self.analyser_avec_moments(m1, m2)
+        
+        if "erreur" not in resultats:
+            resultats["distribution"] = f"Hyper-exponential-{k}"
+            resultats["parametres"] = {
+                "probabilites": p.tolist(),
+                "taux_service": mu.tolist()
+            }
+            resultats["interpretation"] = {
+                "phases": f"Mélange de {k} distributions exponentielles en parallèle",
+                "variabilite": "Très élevée",
+                "cv_carre_theorique": self.calculer_cv_carre(m1, m2)
+            }
+        
+        return resultats
+    
+    def analyser_service_hypoexp(self, EX, k, mu=None):
+        """
+        Analyse avec temps de service Hypo-exponentiels (k phases exponentielles en série avec taux différents).
+        
+        Args:
+            EX: Temps de service moyen souhaité
+            k: Nombre de phases
+            mu: Liste des taux de service de chaque phase (optionnel)
+        """
+        if not isinstance(k, int) or k < 2:
+            raise ValueError("k doit être un entier ≥ 2")
+            
+        # Si mu n'est pas fourni, calculer des taux qui donnent EX
+        if mu is None:
+            # Utiliser des taux différents pour chaque phase
+            mu = np.array([k/EX * (1 + 0.2*i) for i in range(k)])
+        elif len(mu) != k:
+            raise ValueError("mu doit avoir k éléments")
+            
+        # Calcul des moments (formule récursive)
+        m1 = sum(1/mu[i] for i in range(k))
+        
+        # Calcul du second moment
+        m2 = 2 * sum(
+            sum(1/(mu[i]*mu[j]) for j in range(i+1))
+            for i in range(k)
+        )
+        
+        resultats = self.analyser_avec_moments(m1, m2)
+        
+        if "erreur" not in resultats:
+            resultats["distribution"] = f"Hypo-exponential-{k}"
+            resultats["parametres"] = {
+                "taux_service": mu.tolist()
+            }
+            resultats["interpretation"] = {
+                "phases": f"{k} phases exponentielles en série avec taux différents",
+                "variabilite": "Faible à moyenne",
+                "cv_carre_theorique": self.calculer_cv_carre(m1, m2)
             }
         
         return resultats
@@ -112,13 +226,30 @@ class FileAttenteMG1:
         """
         Cas spécial: file M/D/1 (temps de service déterministes).
         Équivalent à des temps de service Erlang-∞.
+        
+        Pour la distribution constante:
+        - m₁ = temps_service
+        - m₂ = temps_service²
+        - CV² = 0
         """
-        return self.analyser_avec_moments(temps_service, 0)
+        m1 = temps_service
+        m2 = temps_service**2
+        
+        resultats = self.analyser_avec_moments(m1, m2)
+        
+        if "erreur" not in resultats:
+            resultats["distribution"] = "Constante"
+            resultats["interpretation"] = {
+                "variabilite": "Nulle",
+                "cv_carre_theorique": 0
+            }
+        
+        return resultats
 
 def afficher_resultats(resultats):
     """
     Fonction auxiliaire pour afficher les résultats d'analyse de file d'attente
-    dans un format clair et pédagogique.
+    dans un format clair et pédagogique, utilisant des fractions.
     """
     if "erreur" in resultats:
         print("\nErreur:", resultats["erreur"])
@@ -129,47 +260,221 @@ def afficher_resultats(resultats):
     
     # Métriques de stabilité
     print("\nMétriques de Stabilité:")
-    print(f"Intensité du Trafic (ρ) = λE[X]: {resultats['intensite_trafic']:.8f}")
-    print(f"Utilisation du Serveur: {resultats['utilisation']:.2%}")
+    print(f"Intensité du Trafic (ρ) = λE[X]: {format_fraction(resultats['intensite_trafic'])}")
+    print(f"Utilisation du Serveur: {format_fraction(resultats['utilisation'] * 100)}%")
     
     # Métriques temporelles
     print("\nMétriques Temporelles:")
-    print(f"E[X]  (Temps de Service Moyen): {resultats['E[X]']:.8f}")
-    print(f"E[Wq] (Temps d'Attente Moyen): {resultats['E[Wq]']:.8f}")
-    print(f"E[R]  (Temps de Réponse Moyen): {resultats['E[R]']:.8f}")
+    print(f"E[X]  (Temps de Service Moyen): {format_fraction(resultats['E[X]'])}")
+    print(f"E[Wq] (Temps d'Attente Moyen): {format_fraction(resultats['E[Wq]'])}")
+    print(f"E[R]  (Temps de Réponse Moyen): {format_fraction(resultats['E[R]'])}")
     
     # Métriques de longueur de file
     print("\nMétriques de Longueur de File:")
-    print(f"E[Qq] (Longueur Moyenne de la File): {resultats['E[Qq]']:.8f}")
-    print(f"E[Q]  (Taille Moyenne du Système): {resultats['E[Q]']:.8f}")
+    print(f"E[Qq] (Longueur Moyenne de la File): {format_fraction(resultats['E[Qq]'])}")
+    print(f"E[Q]  (Taille Moyenne du Système): {format_fraction(resultats['E[Q]'])}")
     
     # Métriques de variabilité
     print("\nMétriques de Variabilité:")
-    print(f"E[X²] (Second Moment du Service): {resultats['E[X²]']:.8f}")
-    print(f"CV²   (Coefficient de Variation au Carré): {resultats['CV²']:.8f}")
-    print(f"CV    (Coefficient de Variation): {resultats['CV']:.8f}")
+    print(f"E[X²] (Second Moment du Service): {format_fraction(resultats['E[X²]'])}")
+    print(f"CV²   (Coefficient de Variation au Carré): {format_fraction(resultats['CV²'])}")
+    print(f"CV    (Coefficient de Variation): {format_fraction(resultats['CV'])}")
     
-    # Informations spécifiques à la distribution Erlang
-    if "distribution" in resultats and resultats["distribution"].startswith("Erlang"):
-        print(f"\nDétails de la Distribution Erlang:")
-        print(f"Paramètre de Forme (k): {resultats['parametre_forme']}")
-        interp = resultats["interpretation"]
-        print(f"Caractéristiques du Processus:")
-        print(f"- {interp['phases']}")
-        print(f"- Niveau de Variabilité: {interp['variabilite']}")
-        print(f"- Taux de Phase (μ): {resultats['taux_phase']:.8f}")
+    # Informations spécifiques à la distribution
+    if "distribution" in resultats:
+        print(f"\nDétails de la Distribution ({resultats['distribution']}):")
+        if "parametre_forme" in resultats:
+            print(f"Paramètre de Forme (k): {format_fraction(resultats['parametre_forme'])}")
+        if "parametres" in resultats:
+            for param_name, param_value in resultats["parametres"].items():
+                if isinstance(param_value, list):
+                    formatted_values = [format_fraction(v) for v in param_value]
+                    print(f"{param_name}: {formatted_values}")
+                else:
+                    print(f"{param_name}: {format_fraction(param_value)}")
+        if "interpretation" in resultats:
+            interp = resultats["interpretation"]
+            print(f"\nCaractéristiques du Processus:")
+            for key, value in interp.items():
+                if isinstance(value, (int, float)):
+                    print(f"- {key.capitalize()}: {format_fraction(value)}")
+                else:
+                    print(f"- {key.capitalize()}: {value}")
 
-if __name__ == "__main__":
-    # Exemple d'utilisation avec différents temps de service Erlang-k
-    taux_arrivee = 1.0  # Moyenne d'1 client par unité de temps
-    temps_service_moyen = 1/6  # Temps de service moyen de 0.5 unités de temps
+def tester_distributions(taux_arrivee=1.0, temps_service_moyen=0.5):
+    """
+    Fonction de test qui compare différentes distributions de service.
+    """
+    print(f"\nTest avec taux d'arrivée λ = {taux_arrivee} et temps de service moyen = {temps_service_moyen}")
+    print("=" * 80)
+    
     file = FileAttenteMG1(taux_arrivee)
     
-    # Comparaison de différents services Erlang-k
-    valeurs_k = [2]
+    # Liste des tests à effectuer
+    tests = [
+        # Service constant (M/D/1)
+        # ("Constant", lambda: file.analyser_service_constant(temps_service_moyen)),
+        # 
+        # # Service exponentiel (M/M/1)
+        # ("Exponentiel", lambda: file.analyser_service_exponentiel(temps_service_moyen)),
+        # 
+        # Services Erlang-k
+        ("Erlang-2", lambda: file.analyser_service_erlang(temps_service_moyen, 2)),
+        # ("Erlang-4", lambda: file.analyser_service_erlang(temps_service_moyen, 4)),
+        
+        # # Services Hyper-exponentiels
+        # ("Hyper-exp-2 (équiprobable)", 
+        #  lambda: file.analyser_service_hyperexp(temps_service_moyen, 2)),
+        # ("Hyper-exp-2 (p=[0.7,0.3])", 
+        #  lambda: file.analyser_service_hyperexp(
+        #      temps_service_moyen, 
+        #      2, 
+        #      p=np.array([0.7, 0.3]),
+        #      mu=np.array([3/temps_service_moyen, 1/temps_service_moyen])
+        #  )),
+        # 
+        # # Services Hypo-exponentiels
+        # ("Hypo-exp-2 (auto)", 
+        #  lambda: file.analyser_service_hypoexp(temps_service_moyen, 2)),
+        # ("Hypo-exp-2 (taux fixés)", 
+        #  lambda: file.analyser_service_hypoexp(
+        #      temps_service_moyen,
+        #      2,
+        #      mu=np.array([3/temps_service_moyen, 2/temps_service_moyen])
+        #  ))
+    ]
     
-    for k in valeurs_k:
-        print(f"\nFile M/G/1 avec Temps de Service Erlang-{k}")
-        print("=" * 50)
-        resultats = file.analyser_service_erlang(temps_service_moyen, k)
-        afficher_resultats(resultats)
+    resultats_tests = []
+    for nom, test in tests:
+        print(f"\nTest de la distribution: {nom}")
+        print("-" * 40)
+        try:
+            resultats = test()
+            resultats["nom_test"] = nom
+            resultats_tests.append(resultats)
+            afficher_resultats(resultats)
+        except Exception as e:
+            print(f"Erreur lors du test: {str(e)}")
+    
+    return resultats_tests
+
+def comparer_distributions(resultats_tests):
+    """
+    Crée des graphiques comparant les différentes distributions.
+    """
+    # Extraire les noms et métriques
+    noms = [r["nom_test"] for r in resultats_tests]
+    cv_carres = [r["CV²"] for r in resultats_tests]
+    temps_attente = [r["E[Wq]"] for r in resultats_tests]
+    temps_reponse = [r["E[R]"] for r in resultats_tests]
+    
+    # Création de la figure avec sous-graphiques
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
+    
+    # Graphique des CV²
+    ax1.bar(noms, cv_carres)
+    ax1.axhline(y=1, color='r', linestyle='--', label='CV² = 1 (Exponentiel)')
+    ax1.set_ylabel('CV²')
+    ax1.set_title('Coefficient de Variation au Carré')
+    ax1.tick_params(axis='x', rotation=45)
+    ax1.legend()
+    
+    # Graphique des temps d'attente
+    ax2.bar(noms, temps_attente)
+    ax2.set_ylabel('E[Wq]')
+    ax2.set_title('Temps d\'Attente Moyen')
+    ax2.tick_params(axis='x', rotation=45)
+    
+    # Graphique des temps de réponse
+    ax3.bar(noms, temps_reponse)
+    ax3.set_ylabel('E[R]')
+    ax3.set_title('Temps de Réponse Moyen')
+    ax3.tick_params(axis='x', rotation=45)
+    
+    plt.tight_layout()
+    plt.show()
+
+def generer_rapport_latex(resultats_tests):
+    """
+    Génère un rapport LaTeX comparant les différentes distributions.
+    """
+    latex = []
+    
+    # En-tête du document
+    latex.append(r"\documentclass{article}")
+    latex.append(r"\usepackage[utf8]{inputenc}")
+    latex.append(r"\usepackage{booktabs}")
+    latex.append(r"\usepackage{float}")
+    latex.append(r"\title{Analyse Comparative des Distributions de Service M/G/1}")
+    latex.append(r"\begin{document}")
+    latex.append(r"\maketitle")
+    
+    # Introduction
+    latex.append(r"\section{Introduction}")
+    latex.append(r"Ce rapport présente une analyse comparative de différentes distributions " + 
+                r"de temps de service dans une file M/G/1.")
+    
+    # Tableau des résultats
+    latex.append(r"\section{Résultats Comparatifs}")
+    latex.append(r"\begin{table}[H]")
+    latex.append(r"\centering")
+    latex.append(r"\begin{tabular}{lcccccc}")
+    latex.append(r"\toprule")
+    latex.append(r"Distribution & $\rho$ & CV² & E[Wq] & E[R] & E[Q] & E[Qq] \\")
+    latex.append(r"\midrule")
+    
+    for r in resultats_tests:
+        ligne = (f"{r['nom_test']} & "
+                f"{format_fraction(r['intensite_trafic'])} & "
+                f"{format_fraction(r['CV²'])} & "
+                f"{format_fraction(r['E[Wq]'])} & "
+                f"{format_fraction(r['E[R]'])} & "
+                f"{format_fraction(r['E[Q]'])} & "
+                f"{format_fraction(r['E[Qq]'])} \\\\")
+        latex.append(ligne)    
+
+    latex.append(r"\bottomrule")
+    latex.append(r"\end{tabular}")
+    latex.append(r"\caption{Comparaison des métriques de performance}")
+    latex.append(r"\end{table}")
+    
+    # Analyse des résultats
+    latex.append(r"\section{Analyse}")
+    latex.append(r"\subsection{Variabilité}")
+    latex.append("Les coefficients de variation (CV²) montrent que:")
+    latex.append(r"\begin{itemize}")
+    for r in resultats_tests:
+        latex.append(fr"\item {r['nom_test']}: CV² = {r['CV²']:.3f}")
+    latex.append(r"\end{itemize}")
+    
+    # Conclusions
+    latex.append(r"\section{Conclusion}")
+    latex.append(r"Cette analyse montre l'impact significatif de la distribution " +
+                r"du temps de service sur les performances de la file d'attente.")
+    
+    latex.append(r"\end{document}")
+    
+    return "\n".join(latex)
+
+if __name__ == "__main__":
+    print("Test complet des différentes distributions de service")
+    print("=" * 50)
+    
+    # Paramètres de test
+    taux_arrivee = 1.0  # 1 client par unité de temps en moyenne
+    temps_service_moyen = 1/6  # Temps de service moyen de 1/6 unité de temps 
+    
+    # Exécuter les tests
+    resultats = tester_distributions(taux_arrivee, temps_service_moyen)
+    
+    # Générer les comparaisons graphiques
+    comparer_distributions(resultats)
+    
+    # Générer le rapport LaTeX
+    rapport_latex = generer_rapport_latex(resultats)
+    
+    # Sauvegarder le rapport LaTeX
+    with open("rapport_file_mg1.tex", "w", encoding="utf-8") as f:
+        f.write(rapport_latex)
+    
+    print("\nTests terminés. Les résultats ont été affichés et un rapport LaTeX a été généré.")

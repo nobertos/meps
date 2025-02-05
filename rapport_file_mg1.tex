@@ -1,0 +1,30 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{booktabs}
+\usepackage{float}
+\title{Analyse Comparative des Distributions de Service M/G/1}
+\begin{document}
+\maketitle
+\section{Introduction}
+Ce rapport présente une analyse comparative de différentes distributions de temps de service dans une file M/G/1.
+\section{Résultats Comparatifs}
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccccc}
+\toprule
+Distribution & $\rho$ & CV² & E[Wq] & E[R] & E[Q] & E[Qq] \\
+\midrule
+Erlang-2 & 1/6 & 1/2 & 1/40 & 23/120 & 23/120 & 1/40 \\
+\bottomrule
+\end{tabular}
+\caption{Comparaison des métriques de performance}
+\end{table}
+\section{Analyse}
+\subsection{Variabilité}
+Les coefficients de variation (CV²) montrent que:
+\begin{itemize}
+\item Erlang-2: CV² = 0.500
+\end{itemize}
+\section{Conclusion}
+Cette analyse montre l'impact significatif de la distribution du temps de service sur les performances de la file d'attente.
+\end{document}

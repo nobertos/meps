@@ -1,5 +1,30 @@
 import numpy as np
 
+from fractions import Fraction
+
+def format_fraction(value, max_denominator=1000):
+    """
+    Convert a float to a fraction string representation.
+    
+    Args:
+        value: Number to convert
+        max_denominator: Maximum denominator to allow in fraction
+    
+    Returns:
+        str: Fraction representation or decimal if conversion not practical
+    """
+    if isinstance(value, (int, float)):
+        if value.is_integer():
+            return str(int(value))
+        try:
+            f = Fraction(value).limit_denominator(max_denominator)
+            if f.denominator == 1:
+                return str(f.numerator)
+            return f"{f.numerator}/{f.denominator}"
+        except:
+            return f"{value:.8f}"
+    return str(value)
+
 def equation_sigma(sigma, mu, fn_laplace, *args):
     """
     Équation à résoudre : σ = A*(μ(1-σ))
@@ -109,6 +134,31 @@ def laplace_hyperexp(s, probs, lambdas):
     return sum(p * lambda_i / (lambda_i + s) 
               for p, lambda_i in zip(probs, lambdas))
 
+
+def laplace_hypoexp(s, taux):
+    """
+    Transformée de Laplace de la distribution hypo-exponentielle (somme de k exponentielles)
+    
+    Args:
+        s: Variable de la transformée de Laplace
+        taux: Liste des taux pour chaque phase
+        
+    Returns:
+        float: Valeur de la transformée de Laplace en s
+        
+    Raises:
+        ValueError: Si les taux ne sont pas valides
+    """
+    if any(t <= 0 for t in taux):
+        raise ValueError("Tous les taux doivent être positifs")
+    
+    # Pour la distribution hypo-exponentielle, la transformée de Laplace est le produit
+    # des transformées de Laplace des distributions exponentielles individuelles
+    resultat = 1.0
+    for mu_i in taux:
+        resultat *= (mu_i / (mu_i + s))
+    return resultat
+
 def laplace_exp(s, lambda_):
     """Transformée de Laplace de la distribution exponentielle"""
     if lambda_ <= 0:
@@ -124,28 +174,53 @@ def laplace_erlang(s, k, mu):
     return (mu / (mu + s)) ** k
 
 def laplace_deterministe(s, D):
-    """Transformée de Laplace de la distribution déterministe"""
     if D <= 0:
+        """Transformée de Laplace de la distribution déterministe"""
         raise ValueError("D doit être positif")
     return np.exp(-s * D)
 
-def file_gm1_generale(mu, distribution='hyperexp', fn_laplace=None, 
-                     probs=None, lambdas=None, **args_dist):
+
+def afficher_resultats(resultats, indentation=2):
     """
-    Analyseur unifié de file G/M/1 supportant plusieurs distributions
+    Afficher les résultats d'analyse de file d'attente dans un format lisible,
+    utilisant des fractions quand possible.
     
     Args:
-        mu: Taux de service
-        distribution: Type de distribution ('hyperexp', 'erlang', 'personnalisée')
-        fn_laplace: Fonction de transformée de Laplace personnalisée
-        probs: Liste des probabilités (pour hyper-exponentielle)
-        lambdas: Liste des taux (pour hyper-exponentielle)
-        args_dist: Arguments supplémentaires spécifiques à la distribution
-        
-    Returns:
-        dict: Métriques de performance de la file ou message d'erreur
+        resultats: Dictionnaire retourné par file_gm1_generale
+        indentation: Nombre d'espaces pour l'indentation
+    """
+    espace = ' ' * indentation
+    
+    if "erreur" in resultats:
+        print(f"{espace}Erreur: {resultats['erreur']}")
+        return
+    
+    nom_dist = resultats.get('distribution', 'inconnue').capitalize()
+    print(f"{espace}Résultats pour la Distribution {nom_dist}:")
+    
+    metriques = [
+        ('Taux d\'Arrivée Effectif (λ)', 'taux_arrivee_effectif'),
+        ('Intensité du Trafic (ρ, Utilisation U)', 'intensite_trafic'),
+        ('Sigma (σ)', 'sigma'),
+        ('Clients Moyens dans le Système', 'clients_moyens'),
+        ('Temps de Réponse Moyen', 'temps_reponse_moyen'),
+        ('Temps d\'Attente Moyen', 'temps_attente_moyen')
+    ]
+    
+    for nom, cle in metriques:
+        if cle in resultats:
+            valeur = format_fraction(resultats[cle])
+            print(f"{espace}- {nom}: {valeur}")
+    
+    print("-" * 50)
+
+def file_gm1_generale(mu, distribution='hyperexp', fn_laplace=None, 
+                     probs=None,  lambdas=None, **args_dist):
+    """
+    [Previous documentation remains the same]
     """
     try:
+
         if distribution == 'hyperexp':
             if probs is None or lambdas is None:
                 raise ValueError("probs et lambdas requis pour hyperexp")
@@ -157,6 +232,14 @@ def file_gm1_generale(mu, distribution='hyperexp', fn_laplace=None,
             
             fn_laplace = laplace_hyperexp
             args_laplace = (probs, lambdas)
+
+        elif distribution == 'hypoexp':
+            taux_hypoexp = args_dist.get('taux_hypoexp')
+            if taux_hypoexp is None or len(taux_hypoexp) < 2:
+                raise ValueError("Au moins deux taux sont requis pour hypoexp")
+            
+            fn_laplace = laplace_hypoexp
+            args_laplace = (taux_hypoexp,)
             
         elif distribution == 'erlang':
             k = args_dist.get('k', 1)
@@ -176,7 +259,7 @@ def file_gm1_generale(mu, distribution='hyperexp', fn_laplace=None,
         # Vérifier la stabilité
         rho = lambda_/mu
         if rho >= 1:
-            return {"erreur": f"Instable (ρ = {rho:.2f} ≥ 1)"}
+            return {"erreur": f"Instable (ρ = {format_fraction(rho)} ≥ 1)"}
 
         # Résoudre pour σ
         sigma = newton_raphson(
@@ -201,38 +284,21 @@ def file_gm1_generale(mu, distribution='hyperexp', fn_laplace=None,
     except Exception as e:
         return {"erreur": str(e)}
 
-def afficher_resultats(resultats, indentation=2):
-    """
-    Afficher les résultats d'analyse de file d'attente dans un format lisible
-    
-    Args:
-        resultats: Dictionnaire retourné par file_gm1_generale
-        indentation: Nombre d'espaces pour l'indentation
-    """
-    espace = ' ' * indentation
-    
-    if "erreur" in resultats:
-        print(f"{espace}Erreur: {resultats['erreur']}")
-        return
-    
-    nom_dist = resultats.get('distribution', 'inconnue').capitalize()
-    print(f"{espace}Résultats pour la Distribution {nom_dist}:")
-    
-    print(f"{espace}- Taux d'Arrivée Effectif (λ): {resultats['taux_arrivee_effectif']:.8f}")
-    print(f"{espace}- Intensité du Trafic (ρ): {resultats['intensite_trafic']:.8f}")
-    print(f"{espace}- Sigma (σ): {resultats['sigma']:.8f}")
-    print(f"{espace}- Clients Moyens dans le Système: {resultats['clients_moyens']:.8f}")
-    print(f"{espace}- Temps de Réponse Moyen: {resultats['temps_reponse_moyen']:.8f}")
-    print(f"{espace}- Temps d'Attente Moyen: {resultats['temps_attente_moyen']:.8f}")
-    
-    print("-" * 50)
-
 if __name__ == "__main__":
     print("Exemple Hyper-exponentiel:")
     res = file_gm1_generale(
-        mu=3.0,
-        distribution='hyperexp',
-        probs=[1/3, 2/3],
-        lambdas=[1, 2]
+        mu=5.0,
+        # for hypo 
+        distribution='erlang',
+        # taux_hypoexp=[10, 5]
+
+        # for hyper
+        # distribution='hyperexp',
+        # probs=[1, 1],
+        # lambdas=[10, 5]
+
+        # for erlang k
+        k = 2
     )
     afficher_resultats(res)
+

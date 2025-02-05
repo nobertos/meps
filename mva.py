@@ -1,4 +1,19 @@
 import numpy as np
+from fractions import Fraction
+
+def format_fraction(value):
+    """Helper function to format numbers as fractions when possible."""
+    if isinstance(value, (int, float)):
+        if value.is_integer():
+            return str(int(value))
+        try:
+            f = Fraction(value).limit_denominator()
+            if f.denominator == 1:
+                return str(f.numerator)
+            return f"{f.numerator}/{f.denominator}"
+        except:
+            return f"{value:.8f}"
+    return str(value)
 
 def mva_algorithm(M, N, mu, e):
     """
@@ -70,26 +85,27 @@ def exemple_utilisation():
     
     # Affichage des résultats
     print("\nRésultats pour", N, "clients:")
+    
     print("\nLongueurs moyennes des files (Q):")
     for i, q in enumerate(Q):
-        print(f"Station {i+1}: {q:.4f}")
+        print(f"Station {i+1}: {format_fraction(q)}")
     
     print("\nDébit global du système (X):")
-    print(f"X = {X:.4f}")
+    print(f"X = {format_fraction(X)}")
     
     print("\nDébits par station (X_i):")
     for i, x in enumerate(X_i):
-        print(f"Station {i+1}: {x:.4f}")
+        print(f"Station {i+1}: {format_fraction(x)}")
     
     print("\nTemps de réponse (R):")
     for i, r in enumerate(R):
-        print(f"Station {i+1}: {r:.4f}")
+        print(f"Station {i+1}: {format_fraction(r)}")
     
     print("\nTemps de réponse total:")
-    print(f"R total = {np.sum(e * R):.4f}")
+    print(f"R total = {format_fraction(np.sum(e * R))}")
     
     print("\nNombre moyen de clients dans le système:")
-    print(f"N moyen = {np.sum(Q):.4f}")
+    print(f"N moyen = {format_fraction(np.sum(Q))}")
 
 if __name__ == "__main__":
     exemple_utilisation()
