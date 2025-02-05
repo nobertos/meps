@@ -49,7 +49,7 @@ def exemple_utilisation():
     
     # Paramètres
     M = 3  # Nombre de stations
-    N = 2  # Nombre de clients
+    N = 1  # Nombre de clients
     
     # Taux de service
     mu = np.array([

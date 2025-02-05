@@ -1,190 +1,175 @@
 import numpy as np
-from scipy import stats
 
-class MG1Queue:
+class FileAttenteMG1:
     """
-    Analysis of M/G/1 queue using the Pollaczek-Khinchin formula.
+    Analyse d'une file d'attente M/G/1 utilisant la formule de Pollaczek-Khinchin.
     
     Notation:
-    - m₁: First moment of service time (E[X])
-    - m₂: Second moment of service time (E[X²])
-    - CV²: Squared coefficient of variation = (m₂ - m₁²)/m₁²
+    - m₁: Premier moment du temps de service (E[X])
+    - m₂: Second moment du temps de service (E[X²])
+    - CV²: Coefficient de variation au carré = (m₂ - m₁²)/m₁²
     """
     
-    def __init__(self, arrival_rate):
-        if arrival_rate <= 0:
-            raise ValueError("Arrival rate must be positive")
-        self.lambda_ = arrival_rate
+    def __init__(self, taux_arrivee):
+        if taux_arrivee <= 0:
+            raise ValueError("Le taux d'arrivée doit être positif")
+        self.lambda_ = taux_arrivee
     
-    def calculate_cv_squared(self, m1, m2):
+    def calculer_cv_carre(self, m1, m2):
         """
-        Calculate squared coefficient of variation using moments.
+        Calcule le coefficient de variation au carré en utilisant les moments.
         
         Args:
-            m1: First moment (mean)
+            m1: Premier moment (moyenne)
             m2: Second moment
             
         Returns:
-            float: Squared coefficient of variation
+            float: Coefficient de variation au carré
         """
         return (m2 - m1**2) / (m1**2)
     
-    def analyze_with_moments(self, m1, m2):
+    def analyser_avec_moments(self, m1, m2):
         """
-        Analyze queue using first two moments of service time distribution.
+        Analyse la file en utilisant les deux premiers moments de la distribution du temps de service.
         
         Args:
-            m1: First moment E[X]
+            m1: Premier moment E[X]
             m2: Second moment E[X²]
         """
-        # Traffic intensity
+        # Intensité du trafic
         rho = self.lambda_ * m1
         
         if rho >= 1:
             return {
-                "error": f"System unstable: traffic intensity ρ = {rho:.4f} ≥ 1",
-                "traffic_intensity": rho
+                "erreur": f"Système instable : intensité du trafic ρ = {rho:.8f} ≥ 1",
+                "intensite_trafic": rho
             }
         
-        # Calculate CV² using moments
-        cv_squared = self.calculate_cv_squared(m1, m2)
+        # Calcul du CV² en utilisant les moments
+        cv_carre = self.calculer_cv_carre(m1, m2)
         
-        # Calculate performance metrics using P-K formula
+        # Calcul des métriques de performance avec la formule P-K
         EWq = (self.lambda_ * m2) / (2 * (1 - rho))
         ER = EWq + m1
         EQq = self.lambda_ * EWq
         EQ = self.lambda_ * ER
         
         return {
-            "traffic_intensity": rho,
-            "E[R]": ER,           # Expected response time
-            "E[Wq]": EWq,         # Expected waiting time
-            "E[Q]": EQ,           # Expected number in system
-            "E[Qq]": EQq,         # Expected queue length
-            "E[X]": m1,           # First moment (mean service time)
+            "intensite_trafic": rho,
+            "E[R]": ER,           # Temps de réponse moyen
+            "E[Wq]": EWq,         # Temps d'attente moyen
+            "E[Q]": EQ,           # Nombre moyen dans le système
+            "E[Qq]": EQq,         # Longueur moyenne de la file
+            "E[X]": m1,           # Premier moment (temps de service moyen)
             "E[X²]": m2,          # Second moment
-            "CV²": cv_squared,    # Squared coefficient of variation
-            "CV": np.sqrt(cv_squared),  # Coefficient of variation
-            "utilization": rho
+            "CV²": cv_carre,      # Coefficient de variation au carré
+            "CV": np.sqrt(cv_carre),  # Coefficient de variation
+            "utilisation": rho
         }
     
-    def analyze_erlang_service(self, EX, k):
+    def analyser_service_erlang(self, EX, k):
         """
-        Analyze queue with Erlang-k distributed service times.
+        Analyse la file avec des temps de service suivant une loi d'Erlang-k.
         
-        For Erlang-k distribution:
+        Pour la distribution d'Erlang-k:
         - m₁ = EX
         - m₂ = EX² * (k+1)/k
         - CV² = 1/k
         
         Args:
-            EX: Expected service time (m₁)
-            k: Shape parameter (number of phases)
+            EX: Temps de service moyen (m₁)
+            k: Paramètre de forme (nombre de phases)
         """
         if not isinstance(k, int) or k < 1:
-            raise ValueError("k must be a positive integer")
+            raise ValueError("k doit être un entier positif")
         
-        # Calculate moments for Erlang-k
+        # Calcul des moments pour Erlang-k
         m1 = EX
-        m2 = (EX**2) * ((k + 1) / k)  # This gives us E[X²] directly
+        m2 = (EX**2) * ((k + 1) / k)
         
-        results = self.analyze_with_moments(m1, m2)
+        resultats = self.analyser_avec_moments(m1, m2)
         
-        if "error" not in results:
-            results["distribution"] = f"Erlang-{k}"
-            results["shape_parameter"] = k
-            results["phase_rate"] = k/EX
-            results["interpretation"] = {
-                "phases": f"Service process consists of {k} exponential phases",
-                "variability": "Low" if k > 5 else "Medium" if k > 1 else "High",
-                "theoretical_cv_squared": 1/k  # Should match our calculated CV²
+        if "erreur" not in resultats:
+            resultats["distribution"] = f"Erlang-{k}"
+            resultats["parametre_forme"] = k
+            resultats["taux_phase"] = k/EX
+            resultats["interpretation"] = {
+                "phases": f"Le processus de service consiste en {k} phases exponentielles",
+                "variabilite": "Faible" if k > 5 else "Moyenne" if k > 1 else "Élevée",
+                "cv_carre_theorique": 1/k
             }
         
-        return results
+        return resultats
 
-# Rest of the code remains the same...    
-    def analyze_exponential_service(self, mean_service):
+    def analyser_service_exponentiel(self, temps_service_moyen):
         """
-        Special case: M/M/1 queue (exponential service times).
-        This is equivalent to Erlang-1 service times.
+        Cas spécial: file M/M/1 (temps de service exponentiels).
+        Équivalent à des temps de service Erlang-1.
         """
-        return self.analyze_erlang_service(mean_service, k=1)
+        return self.analyser_service_erlang(temps_service_moyen, k=1)
     
-    def analyze_constant_service(self, service_time):
+    def analyser_service_constant(self, temps_service):
         """
-        Special case: M/D/1 queue (deterministic service times).
-        This is equivalent to Erlang-∞ service times.
+        Cas spécial: file M/D/1 (temps de service déterministes).
+        Équivalent à des temps de service Erlang-∞.
         """
-        return self.analyze_with_moments(service_time, 0)
-    
-    def analyze_lognormal_service(self, mean, sigma):
-        """Analyze queue with lognormal service times."""
-        mu = np.log(mean) - sigma**2/2
-        variance = (np.exp(sigma**2) - 1) * np.exp(2*mu + sigma**2)
-        return self.analyze_with_moments(mean, variance)
-    
-    def analyze_gamma_service(self, mean, shape):
-        """Analyze queue with gamma-distributed service times."""
-        scale = mean / shape
-        variance = shape * scale**2
-        return self.analyze_with_moments(mean, variance)
+        return self.analyser_avec_moments(temps_service, 0)
 
-def print_results(results):
+def afficher_resultats(resultats):
     """
-    Helper function to print queue analysis results in a clear, educational format.
-    
-    This function presents the queueing metrics using formal notation (E[X], E[R], etc.)
-    while providing descriptive labels to help users understand each measure's meaning.
+    Fonction auxiliaire pour afficher les résultats d'analyse de file d'attente
+    dans un format clair et pédagogique.
     """
-    if "error" in results:
-        print("\nError:", results["error"])
+    if "erreur" in resultats:
+        print("\nErreur:", resultats["erreur"])
         return
         
-    print("\nQueue Analysis Results")
+    print("\nRésultats de l'Analyse de la File d'Attente")
     print("=" * 50)
     
-    # System stability metrics
-    print("\nStability Metrics:")
-    print(f"Traffic Intensity (ρ) = λE[X]: {results['traffic_intensity']:.4f}")
-    print(f"Server Utilization: {results['utilization']:.2%}")
+    # Métriques de stabilité
+    print("\nMétriques de Stabilité:")
+    print(f"Intensité du Trafic (ρ) = λE[X]: {resultats['intensite_trafic']:.8f}")
+    print(f"Utilisation du Serveur: {resultats['utilisation']:.2%}")
     
-    # Time-based metrics
-    print("\nTime Metrics:")
-    print(f"E[X]  (Mean Service Time): {results['E[X]']:.4f}")
-    print(f"E[Wq] (Mean Waiting Time): {results['E[Wq]']:.4f}")
-    print(f"E[R]  (Mean Response Time): {results['E[R]']:.4f}")
+    # Métriques temporelles
+    print("\nMétriques Temporelles:")
+    print(f"E[X]  (Temps de Service Moyen): {resultats['E[X]']:.8f}")
+    print(f"E[Wq] (Temps d'Attente Moyen): {resultats['E[Wq]']:.8f}")
+    print(f"E[R]  (Temps de Réponse Moyen): {resultats['E[R]']:.8f}")
     
-    # Queue length metrics
-    print("\nQueue Length Metrics:")
-    print(f"E[Qq] (Mean Queue Length): {results['E[Qq]']:.4f}")
-    print(f"E[Q]  (Mean System Size): {results['E[Q]']:.4f}")
+    # Métriques de longueur de file
+    print("\nMétriques de Longueur de File:")
+    print(f"E[Qq] (Longueur Moyenne de la File): {resultats['E[Qq]']:.8f}")
+    print(f"E[Q]  (Taille Moyenne du Système): {resultats['E[Q]']:.8f}")
     
-    # Variability metrics
-    print("\nVariability Metrics:")
-    print(f"E[X²] (Second Moment of Service): {results['E[X²]']:.4f}")
-    print(f"CV²   (Squared Coefficient of Variation): {results['CV²']:.4f}")
-    print(f"CV    (Coefficient of Variation): {results['CV']:.4f}")
+    # Métriques de variabilité
+    print("\nMétriques de Variabilité:")
+    print(f"E[X²] (Second Moment du Service): {resultats['E[X²]']:.8f}")
+    print(f"CV²   (Coefficient de Variation au Carré): {resultats['CV²']:.8f}")
+    print(f"CV    (Coefficient de Variation): {resultats['CV']:.8f}")
     
-    # Distribution-specific information for Erlang
-    if "distribution" in results and results["distribution"].startswith("Erlang"):
-        print(f"\nErlang Distribution Details:")
-        print(f"Shape Parameter (k): {results['shape_parameter']}")
-        interp = results["interpretation"]
-        print(f"Process Characteristics:")
+    # Informations spécifiques à la distribution Erlang
+    if "distribution" in resultats and resultats["distribution"].startswith("Erlang"):
+        print(f"\nDétails de la Distribution Erlang:")
+        print(f"Paramètre de Forme (k): {resultats['parametre_forme']}")
+        interp = resultats["interpretation"]
+        print(f"Caractéristiques du Processus:")
         print(f"- {interp['phases']}")
-        print(f"- Variability Level: {interp['variability']}")
-        print(f"- Phase Rate (μ): {results['phase_rate']:.4f}")
+        print(f"- Niveau de Variabilité: {interp['variabilite']}")
+        print(f"- Taux de Phase (μ): {resultats['taux_phase']:.8f}")
+
 if __name__ == "__main__":
-    # Example usage with different Erlang-k service times
-    arrival_rate = 1.0  # Average of 1 customer per unit time
-    mean_service = 1/6  # Mean service time of 0.5 time units
-    queue = MG1Queue(arrival_rate)
+    # Exemple d'utilisation avec différents temps de service Erlang-k
+    taux_arrivee = 1.0  # Moyenne d'1 client par unité de temps
+    temps_service_moyen = 1/6  # Temps de service moyen de 0.5 unités de temps
+    file = FileAttenteMG1(taux_arrivee)
     
-    # Compare different Erlang-k services
-    k_values = [2]
+    # Comparaison de différents services Erlang-k
+    valeurs_k = [2]
     
-    for k in k_values:
-        print(f"\nM/G/1 Queue with Erlang-{k} Service Times")
+    for k in valeurs_k:
+        print(f"\nFile M/G/1 avec Temps de Service Erlang-{k}")
         print("=" * 50)
-        results = queue.analyze_erlang_service(mean_service, k)
-        print_results(results)
+        resultats = file.analyser_service_erlang(temps_service_moyen, k)
+        afficher_resultats(resultats)

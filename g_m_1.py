@@ -1,309 +1,238 @@
 import numpy as np
-import math
 
-
-def sigma_equation(sigma, mu, laplace_fn, *args):
+def equation_sigma(sigma, mu, fn_laplace, *args):
     """
-    Equation to solve: σ = A*(μ(1-σ))
-    where A* is the Laplace transform of the arrival time distribution
+    Équation à résoudre : σ = A*(μ(1-σ))
+    où A* est la transformée de Laplace de la distribution du temps d'arrivée
     
     Args:
-        sigma: Variable to solve for
-        mu: Service rate
-        laplace_fn: Laplace transform function
-        *args: Arguments for Laplace function
+        sigma: Variable à résoudre
+        mu: Taux de service
+        fn_laplace: Fonction de transformée de Laplace
+        *args: Arguments pour la fonction de Laplace
     """
-    return sigma - laplace_fn(mu * (1 - sigma), *args)
+    return sigma - fn_laplace(mu * (1 - sigma), *args)
 
 def newton_raphson(f, x0, args=(), tol=1e-6, max_iter=100):
     """
-    Newton-Raphson method for root finding
+    Méthode de Newton-Raphson pour trouver les racines
     
     Args:
-        f: Function to find root of
-        x0: Initial guess
-        args: Additional arguments for f
-        tol: Tolerance for convergence
-        max_iter: Maximum iterations
+        f: Fonction dont on cherche la racine
+        x0: Estimation initiale
+        args: Arguments supplémentaires pour f
+        tol: Tolérance pour la convergence
+        max_iter: Nombre maximum d'itérations
         
     Returns:
-        float: Root of the equation
+        float: Racine de l'équation
         
     Raises:
-        RuntimeError: If method fails to converge
+        RuntimeError: Si la méthode ne converge pas
     """
-    x0 = float(x0)  # Ensure x0 is float for numerical stability
+    x0 = float(x0)  # Assurer que x0 est un float pour la stabilité numérique
     
     for _ in range(max_iter):
         fx = f(x0, *args)
-        # Compute numerical derivative with central difference
-        h = max(tol, abs(x0 * 1e-8))  # Adaptive step size
+        # Calculer la dérivée numérique avec différence centrale
+        h = max(tol, abs(x0 * 1e-8))  # Pas adaptatif
         fpx = (f(x0 + h, *args) - f(x0 - h, *args)) / (2 * h)
         
         if abs(fpx) < tol:
-            raise RuntimeError("Derivative too close to zero")
+            raise RuntimeError("Dérivée trop proche de zéro")
             
         x1 = x0 - fx / fpx
         if abs(x1 - x0) < tol:
             return x1
         x0 = x1
         
-    raise RuntimeError(f"Failed to converge after {max_iter} iterations")
+    raise RuntimeError(f"Échec de convergence après {max_iter} itérations")
 
-def calculate_performance(sigma, mu, lamda_):
+def calculer_performance(sigma, mu, lambda_):
     """
-    Calculate queue performance metrics using σ
+    Calculer les métriques de performance de la file d'attente en utilisant σ
     
     Args:
-        sigma: Solution to the functional equation
-        mu: Service rate
-        lamda_: Effective arrival rate
+        sigma: Solution de l'équation fonctionnelle
+        mu: Taux de service
+        lambda_: Taux d'arrivée effectif
         
     Returns:
-        tuple: (Q, R, W) where:
-            Q: Average number of customers in system
-            R: Average response time
-            W: Average waiting time
+        tuple: (Q, R, W) où:
+            Q: Nombre moyen de clients dans le système
+            R: Temps de réponse moyen
+            W: Temps d'attente moyen
     """
-    R = 1/mu * (1/(1 - sigma))  # Average response time
-    Q = lamda_ * R                # Average number in system
-    W = R - 1/mu               # Average waiting time
+    R = 1/mu * (1/(1 - sigma))  # Temps de réponse moyen
+    Q = lambda_ * R             # Nombre moyen dans le système
+    W = R - 1/mu               # Temps d'attente moyen
     return Q, R, W
 
-def get_lambda(probs, lambdas):
+def obtenir_lambda(probs, lambdas):
     """
-    Calculate effective arrival rate from hyper-exponential parameters
+    Calculer le taux d'arrivée effectif à partir des paramètres hyper-exponentiels
     
     Args:
-        probs: List of probabilities
-        lambdas: List of rate parameters
+        probs: Liste des probabilités
+        lambdas: Liste des paramètres de taux
         
     Returns:
-        float: Effective arrival rate
+        float: Taux d'arrivée effectif
     """
-    # Mean arrival time is weighted sum of individual mean times
-    mean_time = sum(p * (1/l) for p, l in zip(probs, lambdas))
-    return 1/mean_time
+    temps_moyen = sum(p * (1/l) for p, l in zip(probs, lambdas))
+    return 1/temps_moyen
 
-def hyperexp_laplace(s, probs, lambdas):
+def laplace_hyperexp(s, probs, lambdas):
     """
-    Laplace transform of hyper-exponential (Hk) distribution
+    Transformée de Laplace de la distribution hyper-exponentielle (Hk)
     
     Args:
-        s: Laplace transform variable
-        probs: List of probabilities for each branch
-        lambdas: List of rate parameters for each branch
+        s: Variable de la transformée de Laplace
+        probs: Liste des probabilités pour chaque branche
+        lambdas: Liste des paramètres de taux pour chaque branche
         
     Returns:
-        float: Value of Laplace transform at s
+        float: Valeur de la transformée de Laplace en s
         
     Raises:
-        ValueError: If probabilities don't sum to 1 or if lengths don't match
+        ValueError: Si les probabilités ne somment pas à 1 ou si les longueurs ne correspondent pas
     """
     if len(probs) != len(lambdas):
-        raise ValueError("Number of probabilities must match number of rates")
+        raise ValueError("Le nombre de probabilités doit correspondre au nombre de taux")
     if not np.isclose(sum(probs), 1.0, rtol=1e-5):
-        raise ValueError("Probabilities must sum to 1")
+        raise ValueError("Les probabilités doivent sommer à 1")
     if any(p < 0 or p > 1 for p in probs):
-        raise ValueError("All probabilities must be between 0 and 1")
+        raise ValueError("Toutes les probabilités doivent être entre 0 et 1")
     if any(l <= 0 for l in lambdas):
-        raise ValueError("All rates must be positive")
+        raise ValueError("Tous les taux doivent être positifs")
         
     return sum(p * lambda_i / (lambda_i + s) 
               for p, lambda_i in zip(probs, lambdas))
 
-
-# Added Laplace transforms for common distributions
-def exp_laplace(s, lambda_):
-    """Laplace transform of exponential distribution"""
+def laplace_exp(s, lambda_):
+    """Transformée de Laplace de la distribution exponentielle"""
     if lambda_ <= 0:
-        raise ValueError("Rate must be positive")
+        raise ValueError("Le taux doit être positif")
     return lambda_ / (lambda_ + s)
 
-def erlang_laplace(s, k, mu):
-    """Laplace transform of Erlang-k distribution"""
+def laplace_erlang(s, k, mu):
+    """Transformée de Laplace de la distribution Erlang-k"""
     if k <= 0 or not isinstance(k, int):
-        raise ValueError("k must be positive integer")
+        raise ValueError("k doit être un entier positif")
     if mu <= 0:
-        raise ValueError("mu must be positive")
+        raise ValueError("mu doit être positif")
     return (mu / (mu + s)) ** k
 
-def deterministic_laplace(s, D):
-    """Laplace transform of deterministic distribution"""
+def laplace_deterministe(s, D):
+    """Transformée de Laplace de la distribution déterministe"""
     if D <= 0:
-        raise ValueError("D must be positive")
+        raise ValueError("D doit être positif")
     return np.exp(-s * D)
 
-def gamma_laplace(s, shape, rate):
-    """Laplace transform of Gamma distribution"""
-    if shape <= 0 or rate <= 0:
-        raise ValueError("Shape and rate must be positive")
-    return (rate / (rate + s)) ** shape
-
-def weibull_laplace(s, shape, scale):
-    """Laplace transform of Weibull distribution (series approximation)"""
-    if shape <= 0 or scale <= 0:
-        raise ValueError("Shape and scale must be positive")
-    
-    # Numerical approximation using Taylor series
-    return np.sum([(-1)**n * (scale**n * s**n) * math.gamma(1 + n/shape)
-                  / math.factorial(n) for n in range(0, 20)])
-
-def pareto_laplace(s, alpha, xm):
-    """Laplace transform of Pareto distribution (series approximation)"""
-    if alpha <= 0 or xm <= 0:
-        raise ValueError("Alpha and xm must be positive")
-    
-    # Numerical approximation using integration
-    from scipy.integrate import quad
-    integrand = lambda x: np.exp(-s*x) * alpha * xm**alpha / x**(alpha+1)
-    result, _ = quad(integrand, xm, np.inf)
-    return result
-
-
-def general_gm1_queue(mu, distribution='hyperexp', laplace_fn=None, 
-                     probs=None, lambdas=None, **dist_args):
+def file_gm1_generale(mu, distribution='hyperexp', fn_laplace=None, 
+                     probs=None, lambdas=None, **args_dist):
     """
-    Unified G/M/1 queue analyzer supporting multiple distributions
+    Analyseur unifié de file G/M/1 supportant plusieurs distributions
     
     Args:
-        mu: Service rate
-        distribution: Distribution type ('hyperexp', 'erlang', 'custom')
-        laplace_fn: Custom Laplace transform function (for 'custom' distribution)
-        probs: List of probabilities (for hyperexponential)
-        lambdas: List of rate parameters (for hyperexponential)
-        dist_args: Additional distribution-specific arguments
+        mu: Taux de service
+        distribution: Type de distribution ('hyperexp', 'erlang', 'personnalisée')
+        fn_laplace: Fonction de transformée de Laplace personnalisée
+        probs: Liste des probabilités (pour hyper-exponentielle)
+        lambdas: Liste des taux (pour hyper-exponentielle)
+        args_dist: Arguments supplémentaires spécifiques à la distribution
         
     Returns:
-        dict: Queue performance metrics or error message
+        dict: Métriques de performance de la file ou message d'erreur
     """
     try:
-        # Handle hyper-exponential case
         if distribution == 'hyperexp':
             if probs is None or lambdas is None:
-                raise ValueError("probs and lambdas required for hyperexp")
+                raise ValueError("probs et lambdas requis pour hyperexp")
                 
-            # Validate hyper-exponential parameters
             if len(probs) != len(lambdas):
-                raise ValueError("probs and lambdas must have same length")
+                raise ValueError("probs et lambdas doivent avoir la même longueur")
             if not np.isclose(sum(probs), 1.0, rtol=1e-5):
-                raise ValueError("probs must sum to 1")
-            if any(p < 0 or p > 1 for p in probs):
-                raise ValueError("probs must be in [0,1]")
-            if any(l <= 0 for l in lambdas):
-                raise ValueError("lambdas must be positive")
-                
-            laplace_fn = hyperexp_laplace
-            laplace_args = (probs, lambdas)
+                raise ValueError("probs doivent sommer à 1")
+            
+            fn_laplace = laplace_hyperexp
+            args_laplace = (probs, lambdas)
             
         elif distribution == 'erlang':
-            k = dist_args.get('k', 1)
-            laplace_fn = erlang_laplace
-            laplace_args = (k, dist_args['mu'])
-            
-        elif distribution == 'custom':
-            if laplace_fn is None:
-                raise ValueError("laplace_fn required for custom distribution")
-            laplace_args = dist_args.get('args', ())
+            k = args_dist.get('k', 1)
+            fn_laplace = laplace_erlang
+            args_laplace = (k, args_dist['mu'])
             
         else:
-            raise ValueError(f"Unknown distribution: {distribution}")
+            raise ValueError(f"Distribution inconnue: {distribution}")
 
-        # Calculate effective arrival rate
-        h = 1e-6  # For numerical differentiation
-        A0 = laplace_fn(0, *laplace_args)
-        Ah = laplace_fn(h, *laplace_args)
-        E_T = (A0 - Ah)/h  # E[T] = -dA/ds at s=0
-        lamda_ = 1/E_T
+        # Calculer le taux d'arrivée effectif
+        h = 1e-6
+        A0 = fn_laplace(0, *args_laplace)
+        Ah = fn_laplace(h, *args_laplace)
+        E_T = (A0 - Ah)/h
+        lambda_ = 1/E_T
         
-        # Check stability
-        rho = lamda_/mu
+        # Vérifier la stabilité
+        rho = lambda_/mu
         if rho >= 1:
-            return {"error": f"Unstable (ρ = {rho:.2f} ≥ 1)"}
+            return {"erreur": f"Instable (ρ = {rho:.2f} ≥ 1)"}
 
-        # Solve for σ
+        # Résoudre pour σ
         sigma = newton_raphson(
-            sigma_equation, 
-            0.5,  # Default guess
-            args=(mu, laplace_fn) + laplace_args  # Fix here
+            equation_sigma, 
+            0.5,
+            args=(mu, fn_laplace) + args_laplace
         )
 
-        # Calculate performance metrics
-        Q, R, W = calculate_performance(sigma, mu, lamda_)
+        # Calculer les métriques de performance
+        Q, R, W = calculer_performance(sigma, mu, lambda_)
         
         return {
             "distribution": distribution,
             "sigma": sigma,
-            "traffic_intensity": rho,
-            "average_customers": Q,
-            "average_response_time": R,
-            "average_waiting_time": W,
-            "effective_arrival_rate": lamda_,
-            "probs": probs
+            "intensite_trafic": rho,
+            "clients_moyens": Q,
+            "temps_reponse_moyen": R,
+            "temps_attente_moyen": W,
+            "taux_arrivee_effectif": lambda_
         }
         
     except Exception as e:
-        return {"error": str(e)}
+        return {"erreur": str(e)}
 
-def print_results(results, indent=2):
+def afficher_resultats(resultats, indentation=2):
     """
-    Print queue analysis results in a readable format
+    Afficher les résultats d'analyse de file d'attente dans un format lisible
     
     Args:
-        results: Dictionary returned by general_gm1_queue
-        indent: Number of spaces for indentation
+        resultats: Dictionnaire retourné par file_gm1_generale
+        indentation: Nombre d'espaces pour l'indentation
     """
-    space = ' ' * indent
+    espace = ' ' * indentation
     
-    if "error" in results:
-        print(f"{space}Error: {results['error']}")
+    if "erreur" in resultats:
+        print(f"{espace}Erreur: {resultats['erreur']}")
         return
     
-    # Header with distribution type
-    dist_name = results.get('distribution', 'unknown').capitalize()
-    print(f"{space}{dist_name} Distribution Results:")
+    nom_dist = resultats.get('distribution', 'inconnue').capitalize()
+    print(f"{espace}Résultats pour la Distribution {nom_dist}:")
     
-    # Main metrics
-    print(f"{space}- Effective Arrival Rate (λ): {results['effective_arrival_rate']:.4f}")
-    print(f"{space}- Traffic Intensity (ρ): {results['traffic_intensity']:.4f}")
-    print(f"{space}- Sigma (σ): {results['sigma']:.4f}")
-    print(f"{space}- Average Customers in System: {results['average_customers']:.4f}")
-    print(f"{space}- Average Response Time: {results['average_response_time']:.4f}")
-    print(f"{space}- Average Waiting Time: {results['average_waiting_time']:.4f}")
+    print(f"{espace}- Taux d'Arrivée Effectif (λ): {resultats['taux_arrivee_effectif']:.8f}")
+    print(f"{espace}- Intensité du Trafic (ρ): {resultats['intensite_trafic']:.8f}")
+    print(f"{espace}- Sigma (σ): {resultats['sigma']:.8f}")
+    print(f"{espace}- Clients Moyens dans le Système: {resultats['clients_moyens']:.8f}")
+    print(f"{espace}- Temps de Réponse Moyen: {resultats['temps_reponse_moyen']:.8f}")
+    print(f"{espace}- Temps d'Attente Moyen: {resultats['temps_attente_moyen']:.8f}")
     
-    # Additional distribution-specific parameters
-    if results['distribution'] == 'hyperexp':
-        print(f"{space}- Phases: {len(results.get('probs', []))}")
-    elif results['distribution'] == 'erlang':
-        print(f"{space}- Erlang Stages: {results.get('k', 'N/A')}")
-    
-    print("-" * 50)# Example usage patterns
+    print("-" * 50)
+
 if __name__ == "__main__":
-    # Hyper-exponential (2 phases)
-    print("Hyper-exponential Example:")
-    res = general_gm1_queue(
+    print("Exemple Hyper-exponentiel:")
+    res = file_gm1_generale(
         mu=3.0,
         distribution='hyperexp',
         probs=[1/3, 2/3],
         lambdas=[1, 2]
     )
-    print_results(res)
-    # 
-    # # Erlang-3 arrivals
-    # print("\nErlang Example:")
-    # res = general_gm1_queue(
-    #     mu=4.0,
-    #     distribution='erlang',
-    #     k=3,
-    # )
-    # print_results(res)
-    # 
-    # # Custom distribution (e.g., deterministic)
-    # print("\nCustom Distribution Example:")
-    # res = general_gm1_queue(
-    #     mu=0.8,
-    #     distribution='custom',
-    #     laplace_fn=deterministic_laplace,
-    #     D=1.2
-    # )
-    # print_results(res)
+    afficher_resultats(res)
