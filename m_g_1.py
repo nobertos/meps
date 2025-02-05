@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.stats import expon
-import matplotlib.pyplot as plt
 
 
 from fractions import Fraction
@@ -369,30 +368,9 @@ def comparer_distributions(resultats_tests):
     temps_reponse = [r["E[R]"] for r in resultats_tests]
     
     # Création de la figure avec sous-graphiques
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 15))
     
     # Graphique des CV²
-    ax1.bar(noms, cv_carres)
-    ax1.axhline(y=1, color='r', linestyle='--', label='CV² = 1 (Exponentiel)')
-    ax1.set_ylabel('CV²')
-    ax1.set_title('Coefficient de Variation au Carré')
-    ax1.tick_params(axis='x', rotation=45)
-    ax1.legend()
     
-    # Graphique des temps d'attente
-    ax2.bar(noms, temps_attente)
-    ax2.set_ylabel('E[Wq]')
-    ax2.set_title('Temps d\'Attente Moyen')
-    ax2.tick_params(axis='x', rotation=45)
-    
-    # Graphique des temps de réponse
-    ax3.bar(noms, temps_reponse)
-    ax3.set_ylabel('E[R]')
-    ax3.set_title('Temps de Réponse Moyen')
-    ax3.tick_params(axis='x', rotation=45)
-    
-    plt.tight_layout()
-    plt.show()
 
 def generer_rapport_latex(resultats_tests):
     """
