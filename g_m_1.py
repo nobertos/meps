@@ -244,7 +244,7 @@ def file_gm1_generale(mu, distribution='hyperexp', fn_laplace=None,
         elif distribution == 'erlang':
             k = args_dist.get('k', 1)
             fn_laplace = laplace_erlang
-            args_laplace = (k, args_dist['mu'])
+            args_laplace = (k,mu)
             
         else:
             raise ValueError(f"Distribution inconnue: {distribution}")
